@@ -1,0 +1,89 @@
+# Copyright 2018 Cargill Incorporated
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: "2.1"
+
+services:
+  validator:
+    image: hyperledger/sawtooth-validator:1.0
+    container_name: sabre-validator
+    volumes:
+      - .:/project
+    expose:
+      - 9704
+    ports:
+      - "9704:9704"
+    entrypoint: |-
+      sh -c "
+        sawadm keygen &&
+        sawtooth keygen &&
+        mkdir -p /project/keys &&
+        cp /root/.sawtooth/keys/* /project/keys &&
+        sawset genesis  -k /etc/sawtooth/keys/validator.priv &&
+        sawset proposal create
+          -k /etc/sawtooth/keys/validator.priv
+          sawtooth.swa.administrators=$$(cat project/keys/root.pub)
+          -o config.batch &&
+        sawadm genesis config-genesis.batch config.batch &&
+        sawtooth-validator -vv
+          --endpoint tcp://validator:9705
+          --bind component:tcp://eth0:9704
+          --bind network:tcp://eth0:9705
+        "
+
+  rest-api:
+    image: hyperledger/sawtooth-rest-api:1.0
+    container_name: sabre-sawtooth-rest-api
+    expose:
+      - 9708
+    ports:
+      - "9708:9708"
+    entrypoint: |-
+      sawtooth-rest-api --connect tcp://validator:9704 --bind
+        rest-api:9708 -vv
+
+  shell:
+    image: hyperledger/sawtooth-all:1.0
+    container_name: sabre-shell
+    entrypoint: sh -c "sawtooth keygen && tail -f /dev/null"
+
+  settings-tp:
+    image: hyperledger/sawtooth-settings-tp:1.0
+    container_name: sabre-settings-tp
+    entrypoint: settings-tp -vv --connect tcp://validator:9704
+
+  sabre-tp:
+    image: sabre-tp
+    container_name: sabre-tp
+    entrypoint: |-
+      sh -c "
+        cd /project/tp/ &&
+        cargo build &&
+        sawtooth-sabre -vv -C tcp://validator:9704
+        "
+    volumes:
+      - .:/project
+    build:
+      context: tp
+      dockerfile: Dockerfile-alpine
+
+  sabre-cli:
+    image: sabre-cli
+    container_name: sabre-cli
+    volumes:
+      - .:/project
+      - ./keys:/root/.sawtooth/keys
+    entrypoint: sh -c "cargo build && tail -f /dev/null"
+    build:
+      context: cli

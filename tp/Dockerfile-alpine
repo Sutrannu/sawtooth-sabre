@@ -1,0 +1,12 @@
+FROM alpine
+
+WORKDIR /project/tp
+
+RUN apk add --no-cache build-base cargo protobuf-c unzip libressl-dev zeromq-dev && \
+    rm -rf /var/cache/apk/*
+
+RUN wget -O rustup.sh https://sh.rustup.rs && \
+    sh -s rustup.sh --default-toolchain stable -y
+
+ENV PATH=$PATH:/project/tp/target/debug/ \
+    RUST_BACKTRACE=1
